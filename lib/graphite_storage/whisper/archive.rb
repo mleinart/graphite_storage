@@ -72,7 +72,7 @@ module GraphiteStorage
       end
 
       def read(from, to)
-        return WhisperStorage::Whisper::Series.new([], 0, 0, 0) if first_timestamp == 0
+        return GraphiteStorage::Whisper::Series.new([], 0, 0, 0) if first_timestamp == 0
         from = align_timestamp(from)
         to = align_timestamp(to)
 
@@ -95,7 +95,7 @@ module GraphiteStorage
         parsed_points = raw_points.unpack(POINT_FORMAT * total_points(from,to))
 
         expected_timestamp = from
-        result = WhisperStorage::Whisper::Series.new([], interval, from, to)
+        result = GraphiteStorage::Whisper::Series.new([], interval, from, to)
 
         # If timestamp doesnt match what it should be, it's nil
         parsed_points.each_slice(2) do |timestamp,value|
