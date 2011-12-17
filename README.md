@@ -7,7 +7,7 @@ Here are some [whisper format details](http://readthedocs.org/docs/graphite/en/l
 that I put together while writing this.
 
 Differences with the Original Python Code
-=========================================
+-----------------------------------------
 A major difference between this library and the Python library that ships with Graphite is that the
 Python libs always treat the Whisper database file as up to date and being accessed within the context
 of the current time. This affects input validation (dates older than (now - max\_retention) are rejected),
@@ -18,21 +18,20 @@ Breaking this assumption lead to somewhat more confusing implementation and perh
 more flexibility in accessing data.
 
 Status
-======
+------
 This is currently a first pass. It works for reading Whisper files, but write support has not yet been
 implemented. The interface will likely change a few times before I begin cutting versions. Consider this
 code *experimental* until this message is removed and gems are published.
 
 Todo
-====
+----
 * Add create/write support
 * Add utility methods (resize, merge, etc)
 * Add latest\_update search
 * Refactor Archive#read and Archive#point\_span to be more clear
 
 License and Author
-==================
-
+------------------
 Author:: Michael Leinartas (<mleinartas@gmail.com>)
 
 Copyright 2011, Michael Leinartas
