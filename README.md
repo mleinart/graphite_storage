@@ -19,13 +19,13 @@ more flexibility in accessing data.
 
 Status
 ------
-This is currently a first pass. It works for reading Whisper files, but write support has not yet been
+This is currently a first pass. It works for reading and creating Whisper files, but write support has not yet been
 implemented. The interface will likely change a few times before I begin cutting versions. Consider this
 code *experimental* until this message is removed and gems are published.
 
 Todo
 ----
-* Add create/write support
+* Add write support
 * Add utility methods (resize, merge, etc)
 * Add latest\_update search
 * Refactor Archive#read and Archive#point\_span to be more clear
