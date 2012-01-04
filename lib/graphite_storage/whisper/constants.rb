@@ -56,6 +56,11 @@ module GraphiteStorage
       ARCHIVE_INFO_FORMAT = 'NNN'.freeze
       ARCHIVE_INFO_SIZE = calculate_size(ARCHIVE_INFO_FORMAT)
       ARCHIVE_INFO_OFFSET = METADATA_SIZE
+
+      DEFAULT_WHISPER_OPTIONS = {
+        :aggregation_method => 'average',
+        :x_files_factor => 0.5
+      }.freeze
     end
   end
 end

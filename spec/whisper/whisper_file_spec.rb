@@ -105,7 +105,7 @@ describe "GraphiteStorage::Whisper::WhisperFile" do
     data_point.should == 0
   end
 
-  it "should return a valid time series when accessed as a slice or range" do
+  it "should return a valid time series when accessed as a slice" do
     whisper_file = GraphiteStorage::Whisper.open(nil)
     whisper_file.stub(:archive_count) { 1 }
     whisper_file.stub(:max_retention) { 60 }
@@ -122,10 +122,72 @@ describe "GraphiteStorage::Whisper::WhisperFile" do
     data_points.should == [0]*60
     data_points.begin.should == 0
     data_points.end.should == 60
+  end
+
+  it "should return a valid time series when accessed as a range" do
+    whisper_file = GraphiteStorage::Whisper.open(nil)
+    whisper_file.stub(:archive_count) { 1 }
+    whisper_file.stub(:max_retention) { 60 }
+    mock_archive = double('Archive')
+    mock_archive.stub(:interval) { 60 }
+    mock_archive.stub(:retention) { 60 }
+    mock_archive.stub(:point_span) { 60 }
+    mock_archive.stub(:read) {
+      GraphiteStorage::Whisper::Series.new([0]*60, 60, 0, 60)
+    }
+    whisper_file.stub(:archives) { [ mock_archive ] }
     data_points = whisper_file[0..60]
     data_points.empty?.should be_false
     data_points.should == [0]*60
     data_points.begin.should == 0
     data_points.end.should == 60
+  end
+
+  it "should be able to create a new whisper file with the specified retentions and default settings" do
+    temp_file = Tempfile.new('whisper')
+    defaults = GraphiteStorage::Whisper::Constants::DEFAULT_WHISPER_OPTIONS
+    whisper_file = GraphiteStorage::Whisper::WhisperFile.new(temp_file)
+    whisper_file.create!('10:60', '60:20')
+    whisper_file = GraphiteStorage::Whisper::WhisperFile.new(temp_file)
+    whisper_file.aggregation_method.should == defaults[:aggregation_method]
+    whisper_file.archive_count.should == 2
+    whisper_file.max_retention.should == 1200
+    whisper_file.x_files_factor.should == defaults[:x_files_factor]
+  end
+
+  it "should be able to create a new whisper file with the specified retentions and specified settings" do
+    temp_file = Tempfile.new('whisper')
+    whisper_file = GraphiteStorage::Whisper::WhisperFile.new(temp_file)
+    whisper_file.create!('10:60', '60:20', :x_files_factor => 0.0, :aggregation_method => 'last')
+    whisper_file = GraphiteStorage::Whisper::WhisperFile.new(temp_file)
+    whisper_file.aggregation_method.should == 'last'
+    whisper_file.archive_count.should == 2
+    whisper_file.max_retention.should == 1200
+    whisper_file.x_files_factor.should == 0.0
+  end
+
+  it "should reject creation of a whisper file with no archives" do
+    temp_file = Tempfile.new('whisper')
+    expect { GraphiteStorage::Whisper::WhisperFile.create(temp_file) }.to raise_error(GraphiteStorage::Exceptions::InvalidParameter)
+  end
+
+  it "should reject creation of a whisper file with intervals that dont evenly divide" do
+    temp_file = Tempfile.new('whisper')
+    expect { GraphiteStorage::Whisper::WhisperFile.create(temp_file, '3:10', '5:10') }.to raise_error(GraphiteStorage::Exceptions::InvalidParameter)
+  end
+
+  it "should reject creation of a whisper file with retentions that are not ordered smallest retention to largest" do
+    temp_file = Tempfile.new('whisper')
+    expect { GraphiteStorage::Whisper::WhisperFile.create(temp_file, '10:20', '20:5') }.to raise_error(GraphiteStorage::Exceptions::InvalidParameter)
+  end
+
+  it "should reject creation of a whisper file with intervals that are identical" do
+    temp_file = Tempfile.new('whisper')
+    expect { GraphiteStorage::Whisper::WhisperFile.create(temp_file, '10:20', '10:30') }.to raise_error(GraphiteStorage::Exceptions::InvalidParameter)
+  end
+
+  it "should reject creation of a whisper file where time retentions are identical" do
+    temp_file = Tempfile.new('whisper')
+    expect { GraphiteStorage::Whisper::WhisperFile.create(temp_file, '10:20', '20:10') }.to raise_error(GraphiteStorage::Exceptions::InvalidParameter)
   end
 end

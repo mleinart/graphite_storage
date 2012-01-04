@@ -12,8 +12,28 @@ module GraphiteStorage
         @archive_index = archive_index
       end
 
-      def align_timestamp(timestamp)
-        timestamp - timestamp % interval
+      def self.create(path, archive_index, offset, interval, points)
+        archive = new(path, archive_index)
+        archive.create!(offset, interval, points)
+      end
+
+      def clear!
+        raw_points = ([0,0] * points).pack(POINT_FORMAT * points)
+        File.open(@path, 'r+b') do |file|
+          file.seek(offset)
+          file.flock(File::LOCK_EX)
+          file.write(raw_points)
+        end
+      end
+
+      def create!(offset, interval, points)
+        write_header({
+          :offset => offset,
+          :interval => interval,
+          :points => points
+        })
+        clear!
+        self
       end
 
       def interval
@@ -22,10 +42,6 @@ module GraphiteStorage
 
       def offset
         header[:offset]
-      end
-
-      def points
-        header[:points]
       end
 
       # Returns the number of non-nil points between from and to
@@ -69,6 +85,10 @@ module GraphiteStorage
         else
           last_point[0] - first_point[0]
         end
+      end
+
+      def points
+        header[:points]
       end
 
       def read(from, to)
@@ -122,6 +142,10 @@ module GraphiteStorage
       end
 
       private
+      def align_timestamp(timestamp)
+        timestamp - timestamp % interval
+      end
+
       def byte_offsets(from, to)
         time_offset = from - first_timestamp
         start_byte_distance = (time_offset/interval) * POINT_SIZE
@@ -154,6 +178,20 @@ module GraphiteStorage
 
       def total_points(from, to)
         total_points = ((to - from) / interval) + 1
+      end
+
+      def write_header(new_header)
+        raw_metadata = [
+          new_header[:offset],
+          new_header[:interval],
+          new_header[:points]
+        ].pack(ARCHIVE_INFO_FORMAT)
+
+        File.open(@path, 'r+b') do |file|
+          file.flock(File::LOCK_EX)
+          file.seek(ARCHIVE_INFO_OFFSET + ARCHIVE_INFO_SIZE * @archive_index)
+          file.write(raw_metadata)
+        end
       end
     end
   end

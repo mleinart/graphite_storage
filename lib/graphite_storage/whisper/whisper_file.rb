@@ -1,5 +1,6 @@
 require 'fcntl'
 
+require 'graphite_storage/exceptions'
 require 'graphite_storage/whisper/archive'
 require 'graphite_storage/whisper/constants'
 require 'graphite_storage/whisper/series'
@@ -8,10 +9,16 @@ module GraphiteStorage
   module Whisper
     class WhisperFile
       include Constants
+      include Exceptions
       attr_reader :path
 
       def initialize(path)
         @path = path
+      end
+
+      def self.create(path, *args)
+        whisper_file = new(path)
+        whisper_file.create!(*args)
       end
 
       def [](*args)
@@ -47,6 +54,47 @@ module GraphiteStorage
         @header = nil
       end
 
+      def create!(*args)
+        options_arg = args.last.kind_of?(Hash) ? args.pop : Hash.new
+        options = DEFAULT_WHISPER_OPTIONS.merge(options_arg)
+        unless aggregation_method_exists? options[:aggregation_method]
+          raise InvalidParameter, "Invalid aggregation method specified: '#{options[:aggregation_method]}'"
+        end
+        unless (Float(options[:x_files_factor]).between?(0,1) rescue false)
+          raise InvalidParameter, "Invalid x_files_factor value: '#{options[:x_files_factor]}'. x_files_factor must be a value between 0 and 1"
+        end
+        retentions = args.collect { |retention| parse_retention(retention) }
+        validate_retentions(retentions)
+
+        File.open(@path, 'r+b') do |file|
+          file.flock(File::LOCK_EX)
+          file.truncate(0)
+        end
+
+        max_retention = retentions.last[0] * retentions.last[1]
+        archive_count = retentions.length
+
+        @header = {
+          :aggregation_method => aggregation_code_from_name(options[:aggregation_method]),
+          :max_retention => max_retention,
+          :x_files_factor => options[:x_files_factor],
+          :archive_count => archive_count
+        }
+        write_header
+
+        retentions.each do |interval,points|
+          offset ||= METADATA_SIZE + ARCHIVE_INFO_SIZE * archive_count
+          archive_index ||= 0
+
+          Archive.create(@path, archive_index, offset, interval, points)
+
+          offset += POINT_SIZE * points
+          archive_index += 1
+        end
+
+        self
+      end
+
       def exists?
         File.exists? @path
       end
@@ -77,6 +125,22 @@ module GraphiteStorage
       end
 
       private
+      # Converts time to seconds
+      def parse_time_unit(time_unit)
+        case time_unit
+        when /[0-9]+[smhdy]/
+          time = time_unit[/[0-9]+/].to_i
+          unit = time_unit[/[smhdy]/]
+          time * UNIT_MULTIPLIER.fetch(unit)
+        when /[0-9]+/
+          Integer(time_unit)
+        else
+          raise
+        end
+        rescue IndexError => e
+          raise InvalidParameter, "Invalid time specification specified: '#{time_unit}'"
+      end
+
       def parse_range_args(*args)
         unless args.length.between?(1,2)
           raise ArgumentError, "wrong number of arguments (#{args.size} for 1..2)"
@@ -110,6 +174,18 @@ module GraphiteStorage
         end
 
         [ from_epoch, to_epoch ]
+      end
+
+      def parse_retention(retention)
+        case retention
+        when String
+          interval, points = retention.split(':')
+        when Array
+          interval, points = retention
+        else
+          interval, points = Array(retention)
+        end
+        [ parse_time_unit(interval), parse_time_unit(points) ]
       end
 
       def read_header
@@ -152,7 +228,26 @@ module GraphiteStorage
         end
       end
 
-      def write_header(updated_values)
+      def validate_retentions(retentions)
+        # There must be at least one archive
+        if retentions.nil? or retentions.empty?
+          raise InvalidParameter, "A Whisper database must contain at least one retention definition"
+        end
+
+        retentions.each_cons(2) do |first,second|
+          if first[0] == second[0]
+            raise InvalidParameter, "A Whisper database cannot contain two archives with the same precisions (#{first[0]} == #{second[0]})"
+          elsif first[0] > second[0]
+            raise InvalidParameter, "Whisper archives must be ordered from highest to lowest precision (#{first[0]} > #{second[0]}"
+          elsif (second[0] % first[0]) != 0
+            raise InvalidParameter, "Whisper archive precisions must evenly divide higher precisions (#{second[0]} % #{first[0]} != 0"
+          elsif first[0] * first[1] >= second[0] * second[1]
+            raise InvalidParameter, "Whisper archives must be ordered from lowest time interval to highest (#{first[0] * first[1]} > #{second[0] * second[1]})"
+          end
+        end
+      end
+
+      def write_header(updated_values = {})
         new_header = header.merge(updated_values)
         raw_metadata = [
           new_header[:aggregation_method],

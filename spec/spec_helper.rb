@@ -33,6 +33,11 @@ SPARSE_WSP = {
   :spans => [ nil, 80 ]
 }
 
+STUB_WSP = {
+  :file => File.join(DATA_DIR, 'stub_1_archive_average_series.wsp'),
+  :max_retention => '1200'
+}
+
 def clone_whisper_file(whisper_filename)
   orig_whisper_file = open(whisper_filename)
   temp_whisper_file = Tempfile.new('whisper')

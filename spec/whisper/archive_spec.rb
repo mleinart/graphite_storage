@@ -13,10 +13,7 @@ describe "GraphiteStorage::Whisper::Archive" do
 
   it "should align timestamps to the nearest previous one" do
     archive = GraphiteStorage::Whisper::Archive.new(RANDOM_WSP[:file], 1)
-
     interval = archive.interval
-    aligned_timestamp = archive.align_timestamp(10 * interval + interval/2)
-    aligned_timestamp.should == 10 * interval
 
     result = archive.read(
       RANDOM_WSP[:start] + interval/2,
@@ -40,5 +37,26 @@ describe "GraphiteStorage::Whisper::Archive" do
 
     span = archive.point_span(SPARSE_WSP[:start], SPARSE_WSP[:start] + archive.retention)
     span.should == SPARSE_WSP[:spans][1]
+  end
+
+  it "should be able to clear all stored points" do
+    temp_file = clone_whisper_file(RANDOM_WSP[:file])
+    archive = GraphiteStorage::Whisper::Archive.new(temp_file, 0)
+    archive.clear!
+    result = archive.read(RANDOM_WSP[:start], RANDOM_WSP[:start] + archive.retention)
+    result.should == [nil] * result.length
+  end
+
+  it "should be able to create a new archive" do
+    temp_file = clone_whisper_file(STUB_WSP[:file])
+    GraphiteStorage::Whisper::Archive.create(
+        temp_file,
+        0,
+        GraphiteStorage::Whisper::Constants::ARCHIVE_INFO_OFFSET + GraphiteStorage::Whisper::Constants::ARCHIVE_INFO_SIZE,
+        60,
+        20)
+    archive = GraphiteStorage::Whisper::Archive.new(temp_file, 0)
+    result = archive.read(0, 1200)
+    result.should == [nil] * result.length
   end
 end
