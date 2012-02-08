@@ -36,6 +36,10 @@ module GraphiteStorage
         self
       end
 
+      def end_offset
+        header[:offset] + size
+      end
+
       def interval
         header[:interval]
       end
@@ -59,8 +63,8 @@ module GraphiteStorage
         from.step(to, interval) do |timestamp|
           start_byte_offset = byte_offsets(timestamp, timestamp)[0]
           file.seek(start_byte_offset)
-          raw_point = file.read(POINT_SIZE)
-          point = raw_point.unpack(POINT_FORMAT)
+          raw_point = file.read(TIMESTAMP_SIZE)
+          point = raw_point.unpack(TIMESTAMP_FORMAT)
           if point[0] == timestamp
             first_point = point
             break
@@ -70,8 +74,8 @@ module GraphiteStorage
         to.step(from, -interval) do |timestamp|
           start_byte_offset = byte_offsets(timestamp, timestamp)[0]
           file.seek(start_byte_offset)
-          raw_point = file.read(POINT_SIZE)
-          point = raw_point.unpack(POINT_FORMAT)
+          raw_point = file.read(TIMESTAMP_SIZE)
+          point = raw_point.unpack(TIMESTAMP_FORMAT)
           if point[0] == timestamp
             last_point = point
             break
@@ -98,7 +102,6 @@ module GraphiteStorage
 
         start_byte_offset, end_byte_offset = byte_offsets(from, to)
         total_bytes = (end_byte_offset - start_byte_offset).abs
-        archive_end_offset = offset + size
 
         file = open(@path, 'rb')
 
@@ -107,7 +110,7 @@ module GraphiteStorage
           raw_points = file.read(total_bytes)
         else
           file.seek(start_byte_offset)
-          raw_points = file.read(archive_end_offset - start_byte_offset)
+          raw_points = file.read(end_offset - start_byte_offset)
           file.seek(offset)
           raw_points += file.read(end_byte_offset - offset)
         end
@@ -191,6 +194,56 @@ module GraphiteStorage
           file.flock(File::LOCK_EX)
           file.seek(ARCHIVE_INFO_OFFSET + ARCHIVE_INFO_SIZE * @archive_index)
           file.write(raw_metadata)
+        end
+      end
+
+      def write_point(timestamp, value)
+        timestamp = timestamp(timestamp)
+        offset = byte_offsets(timestamp, timestamp).first
+
+        open(@path, 'r+b') do |file|
+          file.flock(File::LOCK_EX)
+          file.seek(offset)
+          file.seek(offset)
+          new_point = [timestamp,Float(value)].pack(POINT_FORMAT)
+          file.write(new_point)
+        end
+      end
+
+      def write_points(from, values)
+        if values > points
+          # Drop oldest points if size overflows
+          from = from + values[0..-interval].size
+          values = values[-(interval + 1)..-1]
+        end
+
+        from = align_timestamp(from)
+        to = from + points * interval
+        start_byte_offset, end_byte_offset = byte_offsets(from, to)
+        total_bytes = (end_byte_offset - start_byte_offset).abs
+
+        timestamp = from
+        new_points = values.collect { |v|
+          [ timestamp, v ]
+          timestamp += interval
+        }.flatten
+
+        open(@path, 'r+b') do |file|
+          file.flock(File::LOCK_EX)
+
+          if start_byte_offset > end_byte_offset
+            file.seek(start_byte_offset)
+            raw_points = new_points.pack(POINT_FORMAT * values.size)
+            file.write(raw_points)
+          else
+            file.seek(start_byte_offset)
+            chunk_size = end_offset - start_byte_offset
+            raw_points = new_points.shift(chunk_size).pack(POINT_FORMAT * chunk_size)
+            file.write(raw_points)
+            file.seek(offset)
+            raw_points = new_points.pack(POINT_FORMAT * new_points.size)
+            file.write(raw_points)
+          end
         end
       end
     end
